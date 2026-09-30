@@ -31,9 +31,10 @@ rows.forEach((row, index) => {
     const fail = (text) => errors.push(`${at} ${text}`);
     if (!Array.isArray(row) || row.length < 9) return fail('строка — массив минимум из 9 полей');
     const [nick, videoType, videoId, damage, buff, coins, talismans, pet, heroes] = row;
-    const name = `${at} ${nick} ${damage}B`;
+    const name = `${at} ${nick || 'автор неизвестен'} ${damage}B`;
 
-    if (typeof nick !== 'string' || !nick.trim() || nick.length > 40) fail('ник — непустая строка до 40 символов');
+    /** Пустой ник — автор неизвестен, в окне так и пишется */
+    if (typeof nick !== 'string' || nick.length > 40 || (nick !== '' && !nick.trim())) fail('ник — строка до 40 символов, пустая — автор неизвестен');
     if (!isInt(videoType) || videoType < 0) fail('тип видео — целое: 0 нет, 1 YouTube');
     if (videoType === 0 && videoId !== '') fail('без видео id должен быть пустой строкой');
     if (videoType > 0) {
@@ -46,7 +47,7 @@ rows.forEach((row, index) => {
     if (!isInt(coins) || coins < 0) fail('монеты — целое, 0 — неизвестно');
     if (!Array.isArray(talismans) || talismans.length !== 2 || !talismans.every((t) => isInt(t) && t > 8000 && t < 9000)) fail('талисманы — два номера вида 80xx');
     else if (talismans[0] === talismans[1]) fail('один и тот же талисман на обе выдачи не дают');
-    if (!isPet(pet)) fail('питомец — коротко 1–99 или полный 6000–6999');
+    if (pet !== 0 && !isPet(pet)) fail('питомец — 0 без питомца, коротко 1–99 или полный 6000–6999');
 
     if (!Array.isArray(heroes) || heroes.length === 0 || heroes.length % 3 || heroes.length > 15) {
         return fail('герои — от 1 до 5 троек «герой, ранг, покровитель»');

@@ -1,0 +1,8 @@
+# Сборки для HWHArchdemonExt. Сборки сайта нет: только функция и страница-заглушка
+[build]
+  publish = "public"
+
+[functions]
+  directory = "netlify/functions"
+  # esbuild собирает функцию вместе с data/presets.json, файл отдельно выкладывать не нужно
+  node_bundler = "esbuild"

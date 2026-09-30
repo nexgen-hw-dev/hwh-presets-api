@@ -7,6 +7,16 @@
 GET https://<сайт>.netlify.app/api/v1/presets
 ```
 
+Тот же файл отдают ещё два зеркала — репозиторий публичный:
+
+```
+https://cdn.jsdelivr.net/gh/nexgen-hw-dev/hwh-presets-api@main/data/presets.json
+https://raw.githubusercontent.com/nexgen-hw-dev/hwh-presets-api/main/data/presets.json
+```
+
+Дополнение пробует их по очереди — Netlify, jsDelivr, GitHub, — на каждое до 5 секунд, и запоминает ответившее.
+Netlify обновляется сразу после деплоя, GitHub — через несколько минут, jsDelivr держит свой кеш до 12 часов.
+
 Ответ — JSON-массив, без ключей и без данных игрока. CORS открыт всем (`Access-Control-Allow-Origin: *`): данные
 публичные и только для чтения. Браузер и CDN Netlify держат ответ 2 часа, новый деплой сбрасывает кеш CDN.
 Дополнение само хранит копию в `localStorage` 2 часа и при сбое сети берёт просроченную.
@@ -32,7 +42,9 @@ GET https://<сайт>.netlify.app/api/v1/presets
 
 Что в данных не хранится, а зашито в дополнении:
 - префиксы видео: 1 — `https://www.youtube.com/watch?v=`;
-- источники для шапки списка: HWDaily (`https://hwdaily.win/`, автор Fragator) и HWMAP (`https://hwmap.online/`, автор Kircheis).
+- источники для шапки списка — ссылки на страницы нынешнего события, с новым событием их меняют в дополнении
+  (`NX_PRESET_SITES`): HWDaily (`https://hwdaily.win/eva-event/archdemon`, автор Fragator) и HWMAP
+  (`https://hwmap.online/invasion/2999000034/teams`, автор Kircheis).
 
 **Развитие формата.** Новые поля только дописываются в конец строки, смысл старых мест не меняется: старые сборки
 дополнения лишнее пропускают. Несовместимое изменение — только новым адресом, `/api/v2/presets`.
@@ -45,6 +57,8 @@ GET https://<сайт>.netlify.app/api/v1/presets
 1. Правим `data/presets.json`.
 2. `node tools/check.mjs` — форма данных, ранги, повторы героев и покровителей, одинаковые настройки.
 3. Коммит и пуш. Netlify разворачивает сам.
+4. Сбросить кеш jsDelivr, иначе через него старые сборки будут видны до 12 часов: открыть в браузере
+   `https://purge.jsdelivr.net/gh/nexgen-hw-dev/hwh-presets-api@main/data/presets.json`.
 
 ## Откуда сборки
 

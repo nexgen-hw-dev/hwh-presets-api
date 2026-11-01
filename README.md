@@ -43,8 +43,8 @@ Netlify обновляется сразу после деплоя, GitHub — ч
 Что в данных не хранится, а зашито в дополнении:
 - префиксы видео: 1 — `https://www.youtube.com/watch?v=`;
 - источники для шапки списка — ссылки на страницы нынешнего события, с новым событием их меняют в дополнении
-  (`NX_PRESET_SITES`): HWDaily (`https://hwdaily.win/eva-event/archdemon`, автор Fragator) и HWMAP
-  (`https://hwmap.online/invasion/2999000034/teams`, автор Kircheis).
+  (`NX_PRESET_SITES`): HWDaily (`https://hwdaily.win/spooky-festival/archdemon`, автор Fragator) и HWMAP
+  (`https://hwmap.online/invasion/3032000034/teams`, автор Kircheis) — с HWHArchdemonExt 1.10, событие 3032000034.
 
 **Развитие формата.** Новые поля только дописываются в конец строки, смысл старых мест не меняется: старые сборки
 дополнения лишнее пропускают. Несовместимое изменение — только новым адресом, `/api/v2/presets`.

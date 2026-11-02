@@ -1,5 +1,6 @@
 // Проверка data/presets.json перед коммитом: node tools/check.mjs
-// Формат строки: [ник, тип видео, id видео, урон в млрд, усиление, монеты, [т1, т2], питомец, герои] — см. README.
+// Формат строки: [ник, тип видео, id видео, урон в млрд, усиление, монеты, [т1, т2], питомец, герои, стратегия] —
+// см. README. Стратегия необязательна; общая стратегия события — элемент { strategy: [...] }, не больше одного.
 // Номера героев и покровителей по данным игры здесь не проверить: это делает дополнение, неподходящие сборки
 // оно просто не показывает. Здесь — форма данных, ранги, повторы
 import { readFileSync } from 'node:fs';
@@ -25,12 +26,56 @@ const petId = (v) => (v > 0 && v < 100 ? 6000 + v : v);
 const VIDEO_ID = { 1: /^[\w-]{11}$/ };
 const RANKS = [1, 3, 7];
 const seen = new Map();
+const POINTS = [5, 7];
 
+/** Ошибки стратегии: { buff: [от, до], carry: [герой, ранг, …], sacrifice: герой или [герои], point: 5 или 7 } */
+function strategyErrors(raw) {
+    const out = [];
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return ['стратегия — объект { buff, carry, sacrifice, point }'];
+    const { buff, carry, sacrifice, point } = raw;
+    const extra = Object.keys(raw).filter((k) => !['buff', 'carry', 'sacrifice', 'point'].includes(k));
+    if (extra.length) out.push(`лишние поля стратегии: ${extra.join(', ')}`);
+    if (!Array.isArray(buff) || buff.length !== 2 || !buff.every(isInt) || buff[0] < 0 || buff[0] > buff[1] || buff[1] > 1000) {
+        out.push('buff — [от, до], целые 0–1000, от не больше до');
+    }
+    if (!Array.isArray(carry) || !carry.length || carry.length % 2 || carry.length > 10) {
+        out.push('carry — от одной до пяти пар «герой, ранг»');
+    } else {
+        const ids = [];
+        for (let i = 0; i < carry.length; i += 2) {
+            const [hero, rank] = carry.slice(i, i + 2);
+            if (!isInt(hero) || hero < 1 || hero > 999) out.push(`проходной ${hero}: номер от 1 до 999`);
+            if (!RANKS.includes(rank)) out.push(`проходной ${hero}: ранг ${rank}, а бывает только 1, 3 или 7`);
+            if (ids.includes(hero)) out.push(`проходной ${hero} дважды`);
+            ids.push(hero);
+        }
+    }
+    const sac = Array.isArray(sacrifice) ? sacrifice : [sacrifice];
+    if (!sac.length || sac.length > 5 || !sac.every((h) => isInt(h) && h >= 1 && h <= 999) || new Set(sac).size !== sac.length) {
+        out.push('sacrifice — номер героя или список до пяти разных');
+    }
+    if (!POINTS.includes(point)) out.push('point — 5 или 7');
+    return out;
+}
+
+let eventStrategies = 0;
 rows.forEach((row, index) => {
     const at = `#${index + 1}`;
     const fail = (text) => errors.push(`${at} ${text}`);
-    if (!Array.isArray(row) || row.length < 9) return fail('строка — массив минимум из 9 полей');
-    const [nick, videoType, videoId, damage, buff, coins, talismans, pet, heroes] = row;
+    if (row && typeof row === 'object' && !Array.isArray(row)) {
+        if (!('strategy' in row) || Object.keys(row).length !== 1) return fail('кроме сборок в массиве бывает только { strategy: [...] }');
+        if (++eventStrategies > 1) fail('общая стратегия события — одна на файл');
+        if (!Array.isArray(row.strategy) || !row.strategy.length) return fail('strategy — непустой массив стратегий');
+        row.strategy.forEach((s, i) => strategyErrors(s).forEach((e) => fail(`общая стратегия ${i + 1}: ${e}`)));
+        const ranges = row.strategy.filter((s) => Array.isArray(s?.buff)).map((s) => s.buff).sort((a, b) => a[0] - b[0]);
+        for (let i = 1; i < ranges.length; i++) {
+            if (ranges[i][0] <= ranges[i - 1][1]) warnings.push(`${at}: диапазоны общей стратегии пересекаются, ${ranges[i - 1].join('–')} и ${ranges[i].join('–')} — возьмётся первая по списку`);
+        }
+        return;
+    }
+    if (!Array.isArray(row) || row.length < 9 || row.length > 10) return fail('строка — массив из 9 полей или 10 со стратегией');
+    const [nick, videoType, videoId, damage, buff, coins, talismans, pet, heroes, strategy] = row;
+    if (row.length === 10) strategyErrors(strategy).forEach((e) => fail(e));
     const name = `${at} ${nick || 'автор неизвестен'} ${damage}B`;
 
     /** Пустой ник — автор неизвестен, в окне так и пишется */
@@ -76,7 +121,7 @@ rows.forEach((row, index) => {
 for (const w of warnings) console.warn('внимание:', w);
 if (errors.length) {
     for (const e of errors) console.error('ошибка:', e);
-    console.error(`\nсборок ${rows.length}, ошибок ${errors.length}`);
+    console.error(`\nсборок ${rows.length - eventStrategies}, ошибок ${errors.length}`);
     process.exit(1);
 }
-console.log(`сборок ${rows.length}, ошибок нет${warnings.length ? `, замечаний ${warnings.length}` : ''}`);
+console.log(`сборок ${rows.length - eventStrategies}, общая стратегия ${eventStrategies ? 'есть' : 'нет'}, ошибок нет${warnings.length ? `, замечаний ${warnings.length}` : ''}`);

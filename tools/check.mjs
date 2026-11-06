@@ -1,6 +1,7 @@
 // Проверка data/presets.json перед коммитом: node tools/check.mjs
-// Формат строки: [ник, тип видео, id видео, урон в млрд, усиление, монеты, [т1, т2], питомец, герои, стратегия] —
-// см. README. Стратегия необязательна; общая стратегия события — элемент { strategy: [...] }, не больше одного.
+// Формат строки: [ник, тип видео, id видео, урон в млрд, усиление, монеты, [т1, т2], питомец, герои, стратегия, глава] —
+// см. README. Стратегия и глава необязательны: глава без стратегии — null на месте стратегии. Общая стратегия события —
+// элемент { strategy: [...] }, не больше одного.
 // Номера героев и покровителей по данным игры здесь не проверить: это делает дополнение, неподходящие сборки
 // оно просто не показывает. Здесь — форма данных, ранги, повторы
 import { readFileSync } from 'node:fs';
@@ -26,14 +27,25 @@ const petId = (v) => (v > 0 && v < 100 ? 6000 + v : v);
 const VIDEO_ID = { 1: /^[\w-]{11}$/ };
 const RANKS = [1, 3, 7];
 const seen = new Map();
-const POINTS = [5, 7];
+/** Наибольшая точка слива и глава, с HWHArchdemonExt 1.23 и 1.25; до 1.23 точка была только 5 или 7 */
+const MAX_POINT = 20;
+const MAX_CHAPTER = 20;
+/** Неизвестные карты на точке 1: не брать, только дешевле продажи, все */
+const CARDS = ['none', 'cheap', 'any'];
+/** Предохранители дополнения на обновления: запас на точке 1 и ради героя для слива */
+const MAX_REFRESHES = 30;
+const FIELDS = ['buff', 'carry', 'sacrifice', 'point', 'chapters', 'cards', 'reserve', 'refreshes'];
+const isChapter = (v) => isInt(v) && v >= 1 && v <= MAX_CHAPTER;
 
-/** Ошибки стратегии: { buff: [от, до], carry: [герой, ранг, …], sacrifice: герой или [герои], point: 5 или 7 } */
+/**
+ * Ошибки стратегии: { buff: [от, до], carry: [герой, ранг, …], sacrifice: герой или [герои], point: точка слива,
+ * chapters, cards, reserve, refreshes } — последние четыре необязательны
+ */
 function strategyErrors(raw) {
     const out = [];
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return ['стратегия — объект { buff, carry, sacrifice, point }'];
-    const { buff, carry, sacrifice, point } = raw;
-    const extra = Object.keys(raw).filter((k) => !['buff', 'carry', 'sacrifice', 'point'].includes(k));
+    const { buff, carry, sacrifice, point, chapters, cards, reserve, refreshes } = raw;
+    const extra = Object.keys(raw).filter((k) => !FIELDS.includes(k));
     if (extra.length) out.push(`лишние поля стратегии: ${extra.join(', ')}`);
     if (!Array.isArray(buff) || buff.length !== 2 || !buff.every(isInt) || buff[0] < 0 || buff[0] > buff[1] || buff[1] > 1000) {
         out.push('buff — [от, до], целые 0–1000, от не больше до');
@@ -54,7 +66,14 @@ function strategyErrors(raw) {
     if (!sac.length || sac.length > 5 || !sac.every((h) => isInt(h) && h >= 1 && h <= 999) || new Set(sac).size !== sac.length) {
         out.push('sacrifice — номер героя или список до пяти разных');
     }
-    if (!POINTS.includes(point)) out.push('point — 5 или 7');
+    if (!isInt(point) || point < 1 || point > MAX_POINT) out.push(`point — точка слива, целое от 1 до ${MAX_POINT}`);
+    if (chapters !== undefined && (!Array.isArray(chapters) || !chapters.every(isChapter) || new Set(chapters).size !== chapters.length)) {
+        out.push(`chapters — список разных глав от 1 до ${MAX_CHAPTER}; нет поля — для любой главы`);
+    }
+    if (cards !== undefined && !CARDS.includes(cards)) out.push('cards — none, cheap или any; нет поля — none');
+    for (const [name, value] of [['reserve', reserve], ['refreshes', refreshes]]) {
+        if (value !== undefined && (!isInt(value) || value < 0 || value > MAX_REFRESHES)) out.push(`${name} — целое от 0 до ${MAX_REFRESHES}; нет поля — 0`);
+    }
     return out;
 }
 
@@ -73,9 +92,11 @@ rows.forEach((row, index) => {
         }
         return;
     }
-    if (!Array.isArray(row) || row.length < 9 || row.length > 10) return fail('строка — массив из 9 полей или 10 со стратегией');
-    const [nick, videoType, videoId, damage, buff, coins, talismans, pet, heroes, strategy] = row;
-    if (row.length === 10) strategyErrors(strategy).forEach((e) => fail(e));
+    if (!Array.isArray(row) || row.length < 9 || row.length > 11) return fail('строка — массив из 9 полей, 10 со стратегией или 11 с главой');
+    const [nick, videoType, videoId, damage, buff, coins, talismans, pet, heroes, strategy, chapter] = row;
+    if (row.length >= 10 && strategy !== null) strategyErrors(strategy).forEach((e) => fail(e));
+    if (row.length === 10 && strategy === null) fail('null на месте стратегии — только перед главой');
+    if (row.length === 11 && !isChapter(chapter)) fail(`глава — номер по порядку среди глав события, от 1 до ${MAX_CHAPTER}`);
     const name = `${at} ${nick || 'автор неизвестен'} ${damage}B`;
 
     /** Пустой ник — автор неизвестен, в окне так и пишется */

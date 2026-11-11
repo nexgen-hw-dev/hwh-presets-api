@@ -1,7 +1,8 @@
 // Проверка data/presets.json перед коммитом: node tools/check.mjs
-// Формат строки: [ник, тип видео, id видео, урон в млрд, усиление, монеты, [т1, т2], питомец, герои, стратегия, глава] —
-// см. README. Стратегия и глава необязательны: глава без стратегии — null на месте стратегии. Общая стратегия события —
-// элемент { strategy: [...] }, не больше одного.
+// Формат строки: [ник, тип видео, id видео, урон в млрд, усиление, монеты, [т1, т2], питомец, герои, стратегия, глава,
+// событие] — см. README. Стратегия, глава и событие необязательны: глава без стратегии — null на месте стратегии,
+// событие без главы — 0 на месте главы. Элемент события — { event, strategy, sites }: общая стратегия и ссылки на страницы
+// события, с HWHArchdemonExt 1.26; не больше одного на событие и одного без номера.
 // Номера героев и покровителей по данным игры здесь не проверить: это делает дополнение, неподходящие сборки
 // оно просто не показывает. Здесь — форма данных, ранги, повторы
 import { readFileSync } from 'node:fs';
@@ -36,6 +37,32 @@ const CARDS = ['none', 'cheap', 'any'];
 const MAX_REFRESHES = 30;
 const FIELDS = ['buff', 'carry', 'sacrifice', 'point', 'chapters', 'cards', 'reserve', 'refreshes'];
 const isChapter = (v) => isInt(v) && v >= 1 && v <= MAX_CHAPTER;
+/** Номер события, как 3029000034: целое больше нуля */
+const isEvent = (v) => isInt(v) && v > 0;
+/** Поля элемента события и сколько ссылок дополнение берёт в шапку окна */
+const INFO_FIELDS = ['event', 'strategy', 'sites'];
+const MAX_SITES = 4;
+
+/** Ошибки ссылок на страницы события: [{ name, url }], от одной до MAX_SITES, адрес https */
+function sitesErrors(sites) {
+    if (!Array.isArray(sites) || !sites.length || sites.length > MAX_SITES) return [`sites — от одной до ${MAX_SITES} ссылок { name, url }`];
+    const out = [];
+    sites.forEach((site, i) => {
+        const at = `ссылка ${i + 1}`;
+        if (!site || typeof site !== 'object' || Array.isArray(site)) return out.push(`${at}: объект { name, url }`);
+        const extra = Object.keys(site).filter((k) => !['name', 'url'].includes(k));
+        if (extra.length) out.push(`${at}: лишние поля ${extra.join(', ')}`);
+        if (typeof site.name !== 'string' || !site.name.trim() || site.name.length > 40) out.push(`${at}: name — название сайта до 40 символов`);
+        let url = null;
+        try {
+            url = new URL(site.url);
+        } catch {
+            url = null;
+        }
+        if (typeof site.url !== 'string' || site.url.length > 300 || url?.protocol !== 'https:') out.push(`${at}: url — адрес https до 300 символов`);
+    });
+    return out;
+}
 
 /**
  * Ошибки стратегии: { buff: [от, до], carry: [герой, ранг, …], sacrifice: герой или [герои], point: точка слива,
@@ -77,13 +104,24 @@ function strategyErrors(raw) {
     return out;
 }
 
-let eventStrategies = 0;
+let infoRows = 0;
+let strategyRows = 0;
+const infoEvents = new Set();
 rows.forEach((row, index) => {
     const at = `#${index + 1}`;
     const fail = (text) => errors.push(`${at} ${text}`);
     if (row && typeof row === 'object' && !Array.isArray(row)) {
-        if (!('strategy' in row) || Object.keys(row).length !== 1) return fail('кроме сборок в массиве бывает только { strategy: [...] }');
-        if (++eventStrategies > 1) fail('общая стратегия события — одна на файл');
+        infoRows++;
+        const extra = Object.keys(row).filter((k) => !INFO_FIELDS.includes(k));
+        if (extra.length) return fail(`кроме сборок в массиве бывает только элемент события { event, strategy, sites }, лишние поля: ${extra.join(', ')}`);
+        if (!('strategy' in row) && !('sites' in row)) return fail('элемент события без strategy и sites ничего не даёт');
+        if ('event' in row && !isEvent(row.event)) fail('event — номер события, как 3029000034; для любого события поля нет');
+        const key = 'event' in row ? row.event : 'без номера';
+        if (infoEvents.has(key)) fail(`элемент события ${key} — второй; на событие один, и один без номера`);
+        infoEvents.add(key);
+        if ('sites' in row) sitesErrors(row.sites).forEach((e) => fail(e));
+        if (!('strategy' in row)) return;
+        strategyRows++;
         if (!Array.isArray(row.strategy) || !row.strategy.length) return fail('strategy — непустой массив стратегий');
         row.strategy.forEach((s, i) => strategyErrors(s).forEach((e) => fail(`общая стратегия ${i + 1}: ${e}`)));
         const ranges = row.strategy.filter((s) => Array.isArray(s?.buff)).map((s) => s.buff).sort((a, b) => a[0] - b[0]);
@@ -92,11 +130,13 @@ rows.forEach((row, index) => {
         }
         return;
     }
-    if (!Array.isArray(row) || row.length < 9 || row.length > 11) return fail('строка — массив из 9 полей, 10 со стратегией или 11 с главой');
-    const [nick, videoType, videoId, damage, buff, coins, talismans, pet, heroes, strategy, chapter] = row;
+    if (!Array.isArray(row) || row.length < 9 || row.length > 12) return fail('строка — массив из 9 полей, 10 со стратегией, 11 с главой или 12 с событием');
+    const [nick, videoType, videoId, damage, buff, coins, talismans, pet, heroes, strategy, chapter, event] = row;
     if (row.length >= 10 && strategy !== null) strategyErrors(strategy).forEach((e) => fail(e));
     if (row.length === 10 && strategy === null) fail('null на месте стратегии — только перед главой');
     if (row.length === 11 && !isChapter(chapter)) fail(`глава — номер по порядку среди глав события, от 1 до ${MAX_CHAPTER}`);
+    if (row.length === 12 && chapter !== 0 && !isChapter(chapter)) fail(`глава — от 1 до ${MAX_CHAPTER}, перед событием 0 — неизвестна`);
+    if (row.length === 12 && !isEvent(event)) fail('событие — номер события, как 3029000034; для любого события поля нет');
     const name = `${at} ${nick || 'автор неизвестен'} ${damage}B`;
 
     /** Пустой ник — автор неизвестен, в окне так и пишется */
@@ -139,10 +179,14 @@ rows.forEach((row, index) => {
     else seen.set(key, name);
 });
 
+/** Версии дополнения до 1.26 номер события не читают и берут стратегию последнего элемента, где она есть */
+if (strategyRows > 1) warnings.push(`общих стратегий ${strategyRows}: версии дополнения до 1.26 возьмут последнюю для любого события`);
+
 for (const w of warnings) console.warn('внимание:', w);
 if (errors.length) {
     for (const e of errors) console.error('ошибка:', e);
-    console.error(`\nсборок ${rows.length - eventStrategies}, ошибок ${errors.length}`);
+    console.error(`\nсборок ${rows.length - infoRows}, ошибок ${errors.length}`);
     process.exit(1);
 }
-console.log(`сборок ${rows.length - eventStrategies}, общая стратегия ${eventStrategies ? 'есть' : 'нет'}, ошибок нет${warnings.length ? `, замечаний ${warnings.length}` : ''}`);
+const infos = [...infoEvents].join(', ');
+console.log(`сборок ${rows.length - infoRows}, элементов события ${infoRows}${infoRows ? ` (${infos})` : ''}, ошибок нет${warnings.length ? `, замечаний ${warnings.length}` : ''}`);

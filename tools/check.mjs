@@ -35,7 +35,7 @@ const MAX_CHAPTER = 20;
 const CARDS = ['none', 'cheap', 'any'];
 /** Предохранители дополнения на обновления: запас на точке 1 и ради героя для слива */
 const MAX_REFRESHES = 30;
-const FIELDS = ['buff', 'carry', 'sacrifice', 'point', 'chapters', 'cards', 'reserve', 'refreshes'];
+const FIELDS = ['buff', 'carry', 'sacrifice', 'point', 'chapters', 'cards', 'reserve', 'refreshes', 'ascend'];
 const isChapter = (v) => isInt(v) && v >= 1 && v <= MAX_CHAPTER;
 /** Номер события, как 3029000034: целое больше нуля */
 const isEvent = (v) => isInt(v) && v > 0;
@@ -66,12 +66,12 @@ function sitesErrors(sites) {
 
 /**
  * Ошибки стратегии: { buff: [от, до], carry: [герой, ранг, …], sacrifice: герой или [герои], point: точка слива,
- * chapters, cards, reserve, refreshes } — последние четыре необязательны
+ * chapters, cards, reserve, refreshes, ascend } — последние пять необязательны; ascend — с HWHArchdemonExt 1.27
  */
 function strategyErrors(raw) {
     const out = [];
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return ['стратегия — объект { buff, carry, sacrifice, point }'];
-    const { buff, carry, sacrifice, point, chapters, cards, reserve, refreshes } = raw;
+    const { buff, carry, sacrifice, point, chapters, cards, reserve, refreshes, ascend } = raw;
     const extra = Object.keys(raw).filter((k) => !FIELDS.includes(k));
     if (extra.length) out.push(`лишние поля стратегии: ${extra.join(', ')}`);
     if (!Array.isArray(buff) || buff.length !== 2 || !buff.every(isInt) || buff[0] < 0 || buff[0] > buff[1] || buff[1] > 1000) {
@@ -100,6 +100,9 @@ function strategyErrors(raw) {
     if (cards !== undefined && !CARDS.includes(cards)) out.push('cards — none, cheap или any; нет поля — none');
     for (const [name, value] of [['reserve', reserve], ['refreshes', refreshes]]) {
         if (value !== undefined && (!isInt(value) || value < 0 || value > MAX_REFRESHES)) out.push(`${name} — целое от 0 до ${MAX_REFRESHES}; нет поля — 0`);
+    }
+    if (ascend !== undefined && (!Array.isArray(ascend) || ascend.length > 5 || !ascend.every((h) => isInt(h) && h >= 1 && h <= 999) || new Set(ascend).size !== ascend.length)) {
+        out.push('ascend — кого возвысить: список до пяти разных героев; нет поля — герои состава сборки');
     }
     return out;
 }

@@ -35,7 +35,7 @@ const MAX_CHAPTER = 20;
 const CARDS = ['none', 'cheap', 'any'];
 /** Предохранители дополнения на обновления: запас на точке 1 и ради героя для слива */
 const MAX_REFRESHES = 30;
-const FIELDS = ['buff', 'carry', 'sacrifice', 'point', 'chapters', 'cards', 'reserve', 'refreshes', 'ascend', 'start'];
+const FIELDS = ['buff', 'carry', 'sacrifice', 'point', 'chapters', 'cards', 'reserve', 'refreshes', 'ascend', 'start', 'carryAnyPrice', 'noSacrifice'];
 /** «Старт», с HWHArchdemonExt 1.38: сколько героев докупить на точке 1, не больше состава */
 const MAX_START = 5;
 const isChapter = (v) => isInt(v) && v >= 1 && v <= MAX_CHAPTER;
@@ -69,15 +69,20 @@ function sitesErrors(sites) {
 /**
  * Ошибки стратегии: { buff: [от, до], carry: [герой, ранг, …], sacrifice: герой или [герои], point: точка слива,
  * chapters, cards, reserve, refreshes, ascend, start } — последние шесть необязательны; ascend — с HWHArchdemonExt 1.27,
- * start — с 1.38: со стартом carry может быть пустым, а sacrifice — пустым или без поля
+ * start — с 1.38: со стартом carry может быть пустым, а sacrifice — пустым или без поля; carryAnyPrice и noSacrifice —
+ * с 1.39, true или false: проходных и по полной цене; не сливать — тогда sacrifice и point можно не писать
  */
 function strategyErrors(raw) {
     const out = [];
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return ['стратегия — объект { buff, carry, sacrifice, point }'];
-    const { buff, carry, sacrifice, point, chapters, cards, reserve, refreshes, ascend, start } = raw;
+    const { buff, carry, sacrifice, point, chapters, cards, reserve, refreshes, ascend, start, carryAnyPrice, noSacrifice } = raw;
     const startOk = start === undefined || (isInt(start) && start >= 0 && start <= MAX_START);
     if (!startOk) out.push(`start — сколько героев докупить на точке 1, целое от 0 до ${MAX_START}; нет поля — 0`);
     const withStart = startOk && Number(start ?? 0) > 0;
+    for (const [name, value] of [['carryAnyPrice', carryAnyPrice], ['noSacrifice', noSacrifice]]) {
+        if (value !== undefined && typeof value !== 'boolean') out.push(`${name} — true или false; нет поля — false`);
+    }
+    const noLoss = noSacrifice === true;
     const extra = Object.keys(raw).filter((k) => !FIELDS.includes(k));
     if (extra.length) out.push(`лишние поля стратегии: ${extra.join(', ')}`);
     if (!Array.isArray(buff) || buff.length !== 2 || !buff.every(isInt) || buff[0] < 0 || buff[0] > buff[1] || buff[1] > 1000) {
@@ -95,11 +100,13 @@ function strategyErrors(raw) {
             ids.push(hero);
         }
     }
-    const sac = Array.isArray(sacrifice) ? sacrifice : sacrifice === undefined && withStart ? [] : [sacrifice];
-    if ((!sac.length && !withStart) || sac.length > 5 || !sac.every((h) => isInt(h) && h >= 1 && h <= 999) || new Set(sac).size !== sac.length) {
-        out.push('sacrifice — номер героя или список до пяти разных; пусто или нет поля — только со start');
+    const sac = Array.isArray(sacrifice) ? sacrifice : sacrifice === undefined && (withStart || noLoss) ? [] : [sacrifice];
+    if ((!sac.length && !withStart && !noLoss) || sac.length > 5 || !sac.every((h) => isInt(h) && h >= 1 && h <= 999) || new Set(sac).size !== sac.length) {
+        out.push('sacrifice — номер героя или список до пяти разных; пусто или нет поля — только со start или noSacrifice');
     }
-    if (!isInt(point) || point < 1 || point > MAX_POINT) out.push(`point — точка слива, целое от 1 до ${MAX_POINT}`);
+    if (!(point === undefined && noLoss) && (!isInt(point) || point < 1 || point > MAX_POINT)) {
+        out.push(`point — точка слива, целое от 1 до ${MAX_POINT}; без noSacrifice обязательна`);
+    }
     if (chapters !== undefined && (!Array.isArray(chapters) || !chapters.every(isChapter) || new Set(chapters).size !== chapters.length)) {
         out.push(`chapters — список разных глав от 1 до ${MAX_CHAPTER}; нет поля — для любой главы`);
     }

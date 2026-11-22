@@ -35,7 +35,7 @@ const MAX_CHAPTER = 20;
 const CARDS = ['none', 'cheap', 'any'];
 /** Предохранители дополнения на обновления: запас на точке 1 и ради героя для слива */
 const MAX_REFRESHES = 30;
-const FIELDS = ['buff', 'carry', 'sacrifice', 'point', 'chapters', 'cards', 'reserve', 'refreshes', 'ascend', 'start', 'carryAnyPrice', 'noSacrifice'];
+const FIELDS = ['buff', 'carry', 'sacrifice', 'point', 'chapters', 'cards', 'reserve', 'refreshes', 'ascend', 'start', 'carryAnyPrice', 'noSacrifice', 'buyBefore'];
 /** «Старт», с HWHArchdemonExt 1.38: сколько героев докупить на точке 1, не больше состава */
 const MAX_START = 5;
 const isChapter = (v) => isInt(v) && v >= 1 && v <= MAX_CHAPTER;
@@ -70,12 +70,24 @@ function sitesErrors(sites) {
  * Ошибки стратегии: { buff: [от, до], carry: [герой, ранг, …], sacrifice: герой или [герои], point: точка слива,
  * chapters, cards, reserve, refreshes, ascend, start } — последние шесть необязательны; ascend — с HWHArchdemonExt 1.27,
  * start — с 1.38: со стартом carry может быть пустым, а sacrifice — пустым или без поля; carryAnyPrice и noSacrifice —
- * с 1.39, true или false: проходных и по полной цене; не сливать — тогда sacrifice и point можно не писать
+ * с 1.39, true или false: проходных и по полной цене; не сливать — тогда sacrifice и point можно не писать;
+ * buyBefore — с 1.48, [точка 1–20, сколько 1–5]: докупка перед атакой точки
  */
 function strategyErrors(raw) {
     const out = [];
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return ['стратегия — объект { buff, carry, sacrifice, point }'];
-    const { buff, carry, sacrifice, point, chapters, cards, reserve, refreshes, ascend, start, carryAnyPrice, noSacrifice } = raw;
+    const { buff, carry, sacrifice, point, chapters, cards, reserve, refreshes, ascend, start, carryAnyPrice, noSacrifice, buyBefore } = raw;
+    const buyOk =
+        buyBefore === undefined ||
+        (Array.isArray(buyBefore) &&
+            buyBefore.length === 2 &&
+            isInt(buyBefore[0]) &&
+            buyBefore[0] >= 1 &&
+            buyBefore[0] <= MAX_POINT &&
+            isInt(buyBefore[1]) &&
+            buyBefore[1] >= 1 &&
+            buyBefore[1] <= MAX_START);
+    if (!buyOk) out.push(`buyBefore — [точка 1–${MAX_POINT}, сколько 1–${MAX_START}]; нет поля — не докупаем`);
     const startOk = start === undefined || (isInt(start) && start >= 0 && start <= MAX_START);
     if (!startOk) out.push(`start — сколько героев докупить на точке 1, целое от 0 до ${MAX_START}; нет поля — 0`);
     const withStart = startOk && Number(start ?? 0) > 0;
